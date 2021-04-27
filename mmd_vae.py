@@ -1,8 +1,9 @@
 import tensorflow as tf
+tf.compat.v1.disable_eager_execution()
 import numpy as np
 from matplotlib import pyplot as plt
 import math, os
-from tensorflow.examples.tutorials.mnist import input_data
+# from tensorflow.examples.tutorials.mnist import input_data
 
 # Define some handy network layers
 def lrelu(x, rate=0.1):
@@ -86,7 +87,7 @@ def decoder(z, reuse=False):
         fc2 = fc_relu(fc1, 7 * 7 * 128)
         fc2 = tf.reshape(fc2, tf.stack([tf.shape(input=fc2)[0], 7, 7, 128]))
         conv1 = conv2d_t_relu(fc2, 64, 4, 2)
-        output = tf.layers.convolution2d_transpose(
+        output = tf.compat.v1.layers.conv2d_transpose(
             conv1, 1, 4, 2, activation=tf.sigmoid, padding="same"
         )
         return output
@@ -134,8 +135,13 @@ def convert_to_display(samples):
     return samples
 
 
-mnist = input_data.read_data_sets("mnist_data")
-plt.ion()
+batch_size = 200
+(train_images, _), (test_images, _) = tf.keras.datasets.mnist.load_data()
+train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
+train_images /= 255.
+train_dataset = tf.compat.v1.data.Dataset.from_tensor_slices(train_images).shuffle(60000).batch(batch_size).repeat()
+
+# plt.ion()
 
 # Build the computation graph for training
 z_dim = 20
@@ -154,14 +160,19 @@ loss_nll = tf.reduce_mean(input_tensor=tf.square(train_xr - train_x))
 loss = loss_nll + loss_mmd
 trainer = tf.compat.v1.train.AdamOptimizer(1e-3).minimize(loss)
 
-batch_size = 200
 sess = tf.compat.v1.Session()
 sess.run(tf.compat.v1.global_variables_initializer())
 
 # Start training
-for i in range(10000):
-    batch_x, batch_y = mnist.train.next_batch(batch_size)
-    batch_x = batch_x.reshape(-1, 28, 28, 1)
+next_batch = train_dataset.make_one_shot_iterator().get_next()
+
+for i in range(10001):
+# for i, batch_x in enumerate(train_dataset):
+#     if i == 10001:
+#         break
+    # batch_x, batch_y = mnist.train.next_batch(batch_size)
+    # batch_x = batch_x.reshape(-1, 28, 28, 1)
+    batch_x = sess.run(next_batch)
     _, nll, mmd = sess.run([trainer, loss_nll, loss_mmd], feed_dict={train_x: batch_x})
     if i % 100 == 0:
         print("Negative log likelihood is %f, mmd loss is %f" % (nll, mmd))
@@ -170,19 +181,24 @@ for i in range(10000):
             gen_x, feed_dict={gen_z: np.random.normal(size=(100, z_dim))}
         )
         plt.imshow(convert_to_display(samples), cmap="Greys_r")
-        plt.show()
-        plt.pause(0.001)
+        plt.savefig(f"samples_{i:00d}.png")
+        # plt.show()
+        # plt.pause(0.001)
 
 # If latent z is 2-dimensional we visualize it by plotting latent z of different digits in different colors
 if z_dim == 2:
     z_list, label_list = [], []
     test_batch_size = 500
     for i in range(20):
-        batch_x, batch_y = mnist.test.next_batch(test_batch_size)
-        batch_x = batch_x.reshape(-1, 28, 28, 1)
+        batch_x = sess.run(next_batch)
+    #     batch_x, batch_y = mnist.test.next_batch(test_batch_size)
+    #     batch_x = batch_x.reshape(-1, 28, 28, 1)
+    # for i, batch_x in enumerate(train_dataset):
+    #     if i == 20:
+    #         break
         z_list.append(sess.run(train_z, feed_dict={train_x: batch_x}))
-        label_list.append(batch_y)
+        # label_list.append(batch_y)
     z = np.concatenate(z_list, axis=0)
-    label = np.concatenate(label_list)
-    plt.scatter(z[:, 0], z[:, 1], c=label)
-    plt.show()
+    # label = np.concatenate(label_list)
+    plt.scatter(z[:, 0], z[:, 1])#, c=label)
+    plt.savefig(f"scatter.png")
